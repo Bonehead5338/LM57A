@@ -13,7 +13,7 @@
 #include "Wire.h"
 
 //compile-time debug option
-//#define LM57A_DEBUG
+#define LM57A_DEBUG
 
 #ifdef LM57A_DEBUG
 #define DEBUG_PRINT(comment, value)	{	Serial.print(comment);	\
@@ -43,19 +43,26 @@ class LM75AClass
 	 //full 7-bit address of LM75A
 	 uint8_t I2C_Address_7bit;
 
-	 //Tos and Thyst as ints
-	 int Tos;
-	 int Thyst;
-
 	 //set register pointer
 	 bool setCurrentPointer(uint8_t register);
 	 
 	 //set configuration methods
 	 bool setConfiguration(uint8_t config);
 	 bool setSetpoint(float setpoint, uint8_t location);
+	 //generic send command method
+	 bool setRegister(uint8_t location, uint8_t length, uint8_t data_1 = 0, uint8_t data_2 = 0);
+
+	 //generic read register method
+	 bool getRegister(uint8_t location, uint8_t length, uint8_t* result);
+
+	 //sleep or wake generic method
+	 bool SleepWake(bool sleep);
 	 
 	 //read temperature (raw)
 	 bool readTemp(int* result);
+
+	 
+
  
  public:
 	
@@ -67,6 +74,10 @@ class LM75AClass
 	int readCelcius();
 	float readFarenheitFloat();
 	int readFarenheit();
+
+	//sleep or wake
+	bool sleep();
+	bool wake();
 		
 };
 

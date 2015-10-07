@@ -51,15 +51,6 @@ bool LM75AClass::init(uint8_t address, float Tos, float Thyst, uint8_t config)
 			DEBUG_PRINT("LM57A Init Failed to set Thyst ", Thyst);
 			return false;
 		}
-		
-	//set pointer to Temperature register
-	Wire.beginTransmission(I2C_Address_7bit);
-	Wire.write(LM75A_REG_TEMP);
-	if (Wire.endTransmission())
-	{
-		DEBUG_PRINT("LM75A Init Failed to select Temperature Register: ", LM75A_REG_TEMP);
-		return false;	//returns non-zero on error
-	}
 						
 	//return true on successful completion
 	DEBUG_PRINT("LM75A Init Complete ", );
@@ -69,11 +60,7 @@ bool LM75AClass::init(uint8_t address, float Tos, float Thyst, uint8_t config)
 bool LM75AClass::setConfiguration(uint8_t config)
 {
 	//send configuration
-	Wire.beginTransmission(I2C_Address_7bit);
-	Wire.write(LM75A_REG_CONF);
-	Wire.write(config);	
-	
-	return !Wire.endTransmission(); //returns non-zero on error
+	return setRegister(LM75A_REG_CONF, config, 2);
 }
 
 
@@ -94,35 +81,110 @@ bool LM75AClass::setSetpoint(float setpoint, uint8_t location)
 	uint8_t* pData = (uint8_t*)&shifted_int;
 
 	//send configuration (swap MSB and LSB)
-	Wire.beginTransmission(I2C_Address_7bit);
-	Wire.write(location);
-	Wire.write(*(pData + 1));
-	Wire.write(*pData);
-
-	return !Wire.endTransmission(); //returns non-zero on error
+	return setRegister(location, *(pData + 1), *pData);
 }
 
-bool LM75AClass::readTemp(int* result)
+bool LM75AClass::setRegister(uint8_t location, uint8_t length, uint8_t data_1, uint8_t data_2)
 {
-	uint8_t RxData[2]; //2 bytes for received value
+	//send register location plus 2 bytes of data
+	Wire.beginTransmission(I2C_Address_7bit);
+	Wire.write(location);
+	if (length > 1) Wire.write(data_1);
+	if (length > 2) Wire.write(data_2);
 
-	if (Wire.requestFrom(I2C_Address_7bit, (uint8_t)2) != 2)     // request 2 bytes from LM75A, result is number of bytes returned
+	//returns non-zero on error
+	return !Wire.endTransmission(); 
+}
+
+bool LM75AClass::getRegister(uint8_t location, uint8_t length, uint8_t* result)
+{
+	if (!setRegister(location, 1))
 	{
-		DEBUG_PRINT("LM75A Read Temp Failed ", );
+		DEBUG_PRINT("LM75A Get Register Failed to set pointer to selected Register ", );
+		return false;
+	}
+
+	// request {length} bytes from LM75A, result is number of bytes returned
+	if (Wire.requestFrom(I2C_Address_7bit, length) != length)     
+	{
+		DEBUG_PRINT("LM75A Read Register Failed ", );
 		return false;
 	}
 	else
 	{
-		Wire.readBytes(RxData, 2);
+		Wire.readBytes(result, length);
+		return true;
+	}
+}
+
+bool LM75AClass::sleep()
+{
+	return SleepWake(true);
+}
+
+bool LM75AClass::wake()
+{
+	return SleepWake(false);
+}
+
+bool LM75AClass::SleepWake(bool sleep)
+{
+	//select config register
+	if (!setRegister(LM75A_REG_CONF, 1))
+	{
+		DEBUG_PRINT("LM75A Sleep/Wake Failed to set pointer to Config Register ", );
+		return false;
+	}
+
+	uint8_t rx_config; //1 bytes for received config
+
+	if (!getRegister(LM75A_REG_CONF, 1, (uint8_t*)&rx_config))
+	{
+		return false;
+	}
+
+	if (sleep)
+	{
+		//set bit 0 to enable temp shutdown
+		rx_config |= 0x01;
+	}
+	else
+	{
+		//clear bit 0 to disable tempo shutdown
+		rx_config &= 0xFE;
+	}
+
+	if (!setConfiguration(rx_config))
+	{
+		DEBUG_PRINT("LM75A Sleep/Wake Failed to Config Register ", rx_config);
+		return false;
+	}
+	else
+		return true;
+}
+
+bool LM75AClass::readTemp(int* result)
+{
+	if (!setRegister(LM75A_REG_TEMP, 1))
+	{
+		DEBUG_PRINT("LM75A Read Failed to set pointer to Temp Register ", );
+		return false;
 	}
 	
+	uint16_t RxData; //2 bytes for received value
+
+	if (!getRegister(LM75A_REG_TEMP, 2, (uint8_t*)&RxData))
+	{
+		return false;
+	}
+		
 	uint16_t rx_result;
 	
 	//swap bytes and store in temporary result
 	uint8_t* ptr = (uint8_t*)&rx_result;
 
-	*ptr = RxData[1];
-	*(ptr + 1) = RxData[0];
+	*ptr = *((uint8_t*)&RxData + 1);
+	*(ptr + 1) = *(uint8_t*)&RxData;
 
 	//shift data 5 places to the right (left-align data)
 	rx_result >>= 5;
